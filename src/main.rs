@@ -1,11 +1,14 @@
-use base64::{Engine as _, engine::general_purpose};
-use bitcoin::consensus::{Decodable, serialize};
+use anyhow::anyhow;
+use base64::{engine::general_purpose, Engine as _};
+use bitcoin::consensus::{serialize, Decodable};
+use bitcoin::network::Magic;
 use bitcoin::Transaction;
 use hex_string::HexString;
-use nostr::Keys;
 use nostr::prelude::*;
-use nostr_sdk::Client;
+use nostr::Keys;
 use nostr_sdk::relay::pool::RelayPoolNotification::*;
+use nostr_sdk::Client;
+use std::str::FromStr;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -35,7 +38,30 @@ async fn main() -> anyhow::Result<()> {
                     let decoded = general_purpose::STANDARD.decode(event.content)?;
                     let transaction = Transaction::consensus_decode(&mut decoded.as_slice())?;
 
-                    broadcast_tx(transaction).await?;
+                    // calculate network from magic
+                    let network = event
+                        .tags
+                        .clone()
+                        .into_iter()
+                        .find(|t| t.kind() == TagKind::Custom("magic".to_string()))
+                        .and_then(|t| {
+                            if let Tag::Generic(_, magic) = t {
+                                let str = magic.first().unwrap().clone();
+                                Magic::from_str(&str).ok().and_then(Network::from_magic)
+                            } else {
+                                None
+                            }
+                        });
+
+                    match network {
+                        Some(network) => {
+                            println!("Network: {:?}", network);
+                            broadcast_tx(transaction, network).await?;
+                        }
+                        None => {
+                            println!("Network: unknown");
+                        }
+                    }
                 }
             }
             Ok(())
@@ -44,14 +70,21 @@ async fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-async fn broadcast_tx(tx: Transaction) -> anyhow::Result<()> {
+async fn broadcast_tx(tx: Transaction, network: Network) -> anyhow::Result<()> {
     let client = reqwest::Client::builder().build()?;
+
+    let url = match network {
+        Network::Bitcoin => Ok("https://mempool.space/api/tx"),
+        Network::Testnet => Ok("https://mempool.space/testnet/api/tx"),
+        Network::Signet => Ok("https://mempool.space/signet/api/tx"),
+        net => Err(anyhow!("{net} is not supported")),
+    }?;
 
     let bytes = serialize(&tx);
     let body = HexString::from_bytes(&bytes).as_string();
 
     client
-        .post(&format!("https://mempool.space/api/tx"))
+        .post(url)
         .body(body)
         .send()
         .await?
