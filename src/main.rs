@@ -46,7 +46,7 @@ async fn main() -> anyhow::Result<()> {
                         .find(|t| t.kind() == TagKind::Custom("magic".to_string()))
                         .and_then(|t| {
                             if let Tag::Generic(_, magic) = t {
-                                let str = magic.first().unwrap().clone();
+                                let str = magic.first().unwrap();
                                 Magic::from_str(&str).ok()
                             } else {
                                 None
@@ -55,7 +55,9 @@ async fn main() -> anyhow::Result<()> {
 
                     match magic {
                         Some(magic) => {
-                            broadcast_tx(transaction, magic).await?;
+                            if let Err(e) = broadcast_tx(transaction, magic).await {
+                                println!("Error broadcasting tx: {e}");
+                            }
                         }
                         None => {
                             println!("Network: unknown");
