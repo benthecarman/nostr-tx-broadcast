@@ -39,7 +39,7 @@ async fn main() -> anyhow::Result<()> {
                     let transaction = Transaction::consensus_decode(&mut decoded.as_slice())?;
 
                     // calculate network from magic
-                    let network = event
+                    let magic = event
                         .tags
                         .clone()
                         .into_iter()
@@ -47,16 +47,15 @@ async fn main() -> anyhow::Result<()> {
                         .and_then(|t| {
                             if let Tag::Generic(_, magic) = t {
                                 let str = magic.first().unwrap().clone();
-                                Magic::from_str(&str).ok().and_then(Network::from_magic)
+                                Magic::from_str(&str).ok()
                             } else {
                                 None
                             }
                         });
 
-                    match network {
-                        Some(network) => {
-                            println!("Network: {:?}", network);
-                            broadcast_tx(transaction, network).await?;
+                    match magic {
+                        Some(magic) => {
+                            broadcast_tx(transaction, magic).await?;
                         }
                         None => {
                             println!("Network: unknown");
@@ -70,14 +69,17 @@ async fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-async fn broadcast_tx(tx: Transaction, network: Network) -> anyhow::Result<()> {
+async fn broadcast_tx(tx: Transaction, magic: Magic) -> anyhow::Result<()> {
     let client = reqwest::Client::builder().build()?;
 
-    let url = match network {
-        Network::Bitcoin => Ok("https://mempool.space/api/tx"),
-        Network::Testnet => Ok("https://mempool.space/testnet/api/tx"),
-        Network::Signet => Ok("https://mempool.space/signet/api/tx"),
-        net => Err(anyhow!("{net} is not supported")),
+    let mutinynet = Magic::from_bytes([0xA5, 0xDF, 0x2D, 0xCB]);
+
+    let url = match magic {
+        Magic::BITCOIN => Ok("https://mempool.space/api/tx"),
+        Magic::TESTNET => Ok("https://mempool.space/testnet/api/tx"),
+        Magic::SIGNET => Ok("https://mempool.space/signet/api/tx"),
+        magic if magic == mutinynet => Ok("https://mutinynet.com/api/tx"),
+        magic => Err(anyhow!("Magic: {magic} is unknown")),
     }?;
 
     let bytes = serialize(&tx);
