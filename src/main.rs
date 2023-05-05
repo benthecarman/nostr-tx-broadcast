@@ -35,9 +35,6 @@ async fn main() -> anyhow::Result<()> {
         .handle_notifications(|notification| async {
             if let Event(_, event) = notification {
                 if event.kind == bitcoin_tx_kind {
-                    let decoded = general_purpose::STANDARD.decode(event.content)?;
-                    let transaction = Transaction::consensus_decode(&mut decoded.as_slice())?;
-
                     // calculate network from magic
                     let magic = event
                         .tags
@@ -46,17 +43,34 @@ async fn main() -> anyhow::Result<()> {
                         .find(|t| t.kind() == TagKind::Custom("magic".to_string()))
                         .and_then(|t| {
                             if let Tag::Generic(_, magic) = t {
-                                let str = magic.first().unwrap();
-                                Magic::from_str(&str).ok()
+                                magic.first().and_then(|m| Magic::from_str(m).ok())
                             } else {
                                 None
                             }
                         });
 
+                    // get transactions
+                    let txs: Vec<Transaction> = event
+                        .tags
+                        .clone()
+                        .into_iter()
+                        .find(|t| t.kind() == TagKind::Custom("transactions".to_string()))
+                        .map(|t| {
+                            if let Tag::Generic(_, txs) = t {
+                                txs.iter().filter_map(|tx| {
+                                    general_purpose::STANDARD.decode(tx).ok().and_then(|decoded| {
+                                        Transaction::consensus_decode(&mut decoded.as_slice()).ok()
+                                    })
+                                }).collect()
+                            } else {
+                                vec![]
+                            }
+                        }).unwrap_or_default();
+
                     match magic {
                         Some(magic) => {
-                            if let Err(e) = broadcast_tx(transaction, magic).await {
-                                println!("Error broadcasting tx: {e}");
+                            if let Err(e) = broadcast_txs(txs, magic).await {
+                                println!("Error broadcasting txs: {e}");
                             }
                         }
                         None => {
@@ -71,7 +85,7 @@ async fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-async fn broadcast_tx(tx: Transaction, magic: Magic) -> anyhow::Result<()> {
+async fn broadcast_txs(txs: Vec<Transaction>, magic: Magic) -> anyhow::Result<()> {
     let client = reqwest::Client::builder().build()?;
 
     let mutinynet = Magic::from_bytes([0xA5, 0xDF, 0x2D, 0xCB]);
@@ -84,15 +98,19 @@ async fn broadcast_tx(tx: Transaction, magic: Magic) -> anyhow::Result<()> {
         magic => Err(anyhow!("Magic: {magic} is unknown")),
     }?;
 
-    let bytes = serialize(&tx);
-    let body = HexString::from_bytes(&bytes).as_string();
+    for tx in txs {
+        let bytes = serialize(&tx);
+        let body = HexString::from_bytes(&bytes).as_string();
 
-    client
-        .post(url)
-        .body(body)
-        .send()
-        .await?
-        .error_for_status()?;
+        client
+            .post(url)
+            .body(body)
+            .send()
+            .await?
+            .error_for_status()?;
 
-    Ok(println!("Broadcasted tx: {}", tx.txid()))
+        println!("Broadcasted tx: {}", tx.txid());
+    }
+
+    Ok(())
 }
