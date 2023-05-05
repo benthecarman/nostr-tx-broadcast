@@ -86,6 +86,10 @@ async fn main() -> anyhow::Result<()> {
 }
 
 async fn broadcast_txs(txs: Vec<Transaction>, magic: Magic) -> anyhow::Result<()> {
+    if txs.is_empty() {
+        return Ok(());
+    }
+
     let client = reqwest::Client::builder().build()?;
 
     let mutinynet = Magic::from_bytes([0xA5, 0xDF, 0x2D, 0xCB]);
