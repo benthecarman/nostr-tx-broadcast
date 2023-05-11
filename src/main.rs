@@ -1,5 +1,4 @@
 use anyhow::anyhow;
-use base64::{engine::general_purpose, Engine as _};
 use bitcoin::consensus::{serialize, Decodable};
 use bitcoin::network::Magic;
 use bitcoin::Transaction;
@@ -58,8 +57,8 @@ async fn main() -> anyhow::Result<()> {
                         .map(|t| {
                             if let Tag::Generic(_, txs) = t {
                                 txs.iter().filter_map(|tx| {
-                                    general_purpose::STANDARD.decode(tx).ok().and_then(|decoded| {
-                                        Transaction::consensus_decode(&mut decoded.as_slice()).ok()
+                                    HexString::from_string(tx).ok().and_then(|hex| {
+                                        Transaction::consensus_decode(&mut hex.as_bytes().as_slice()).ok()
                                     })
                                 }).collect()
                             } else {

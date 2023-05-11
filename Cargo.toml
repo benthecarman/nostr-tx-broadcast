@@ -5,7 +5,6 @@ edition = "2021"
 
 [dependencies]
 anyhow = "1.0.70"
-base64 = "0.21.0"
 bitcoin = { version = "0.30.0", features = ["serde"] }
 hex-string = "0.1.0"
 nostr = "0.21.0"
