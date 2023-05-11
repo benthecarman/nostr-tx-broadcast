@@ -2,6 +2,7 @@ use anyhow::anyhow;
 use bitcoin::consensus::{serialize, Decodable};
 use bitcoin::network::Magic;
 use bitcoin::Transaction;
+use clap::Parser;
 use hex_string::HexString;
 use nostr::prelude::*;
 use nostr::Keys;
@@ -9,17 +10,28 @@ use nostr_sdk::relay::pool::RelayPoolNotification::*;
 use nostr_sdk::Client;
 use std::str::FromStr;
 
+#[derive(Parser)]
+#[command()]
+struct Args {
+    #[arg(short, long)]
+    relays: Vec<String>,
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    let args = Args::parse();
+
     let my_keys = Keys::generate();
 
     let client = Client::new(&my_keys);
-    client.add_relay("wss://nostr.wine", None).await?;
-    client.add_relay("wss://nos.lol", None).await?;
-    client.add_relay("wss://nostr.fmt.wiz.biz", None).await?;
-    client.add_relay("wss://nostr.zebedee.cloud", None).await?;
-    client.add_relay("wss://relay.damus.io", None).await?;
 
+    if args.relays.len() == 0 {
+        anyhow::bail!("No relay(s) provided");
+    }
+
+    for relay in args.relays {
+        client.add_relay(relay, None).await?;
+    }
     client.connect().await;
 
     let bitcoin_tx_kind = Kind::Custom(28333);
