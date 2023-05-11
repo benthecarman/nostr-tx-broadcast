@@ -22,5 +22,5 @@ nostr-tx-broadcast does the following:
 Start by just doing:
 
 ```bash
-cargo run
+cargo run -- -r <relay>
 ```
